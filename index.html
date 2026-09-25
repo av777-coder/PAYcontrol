@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Control de Pagos y Cuotas</title>
+  <style>
+    :root {
+      --bg: #0b0f19;
+      --card: #161f30;
+      --border: #233149;
+      --text: #f8fafc;
+      --muted: #94a3b8;
+      --accent: #3b82f6;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+      --success: #10b981;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; }
+    body { background-color: var(--bg); color: var(--text); padding: 16px; display: flex; justify-content: center; }
+    .container { width: 100%; max-width: 480px; display: flex; flex-direction: column; gap: 14px; }
+    .card { background-color: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 16px; box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
+    h1 { font-size: 1.25rem; font-weight: 700; text-align: center; }
+    .subtitle { font-size: 0.8rem; color: var(--muted); text-align: center; margin-bottom: 12px; }
+    
+    .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 6px; }
+    .stat-box { background: rgba(0,0,0,0.25); border: 1px solid var(--border); padding: 12px; border-radius: 10px; text-align: center; }
+    .stat-val { font-size: 1.25rem; font-weight: 800; color: var(--text); }
+    .stat-label { font-size: 0.7rem; color: var(--muted); text-transform: uppercase; margin-top: 2px; }
+
+    label { display: block; font-size: 0.75rem; color: var(--muted); text-transform: uppercase; margin-bottom: 4px; font-weight: 600; }
+    input, select { width: 100%; padding: 10px; border-radius: 8px; border: 1px solid var(--border); background: #0b0f19; color: white; font-size: 0.95rem; margin-bottom: 10px; outline: none; }
+    input:focus, select:focus { border-color: var(--accent); }
+
+    .btn { width: 100%; padding: 12px; border: none; border-radius: 8px; font-weight: 700; font-size: 0.95rem; cursor: pointer; transition: 0.2s; }
+    .btn-primary { background: var(--accent); color: white; }
+    .btn-notif { background: #1e293b; color: var(--text); border: 1px solid var(--border); margin-bottom: 10px; font-size: 0.8rem; padding: 8px; }
+
+    .bill-item { padding: 12px; border-radius: 10px; background: #0f172a; border: 1px solid var(--border); margin-bottom: 10px; }
+    .bill-item.urgent { border-color: var(--danger); background: rgba(239, 68, 68, 0.08); }
+    .bill-item.warning { border-color: var(--warning); background: rgba(245, 158, 11, 0.08); }
+    
+    .bill-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px; }
+    .bill-title { font-weight: 700; font-size: 0.95rem; }
+    .bill-meta { font-size: 0.8rem; color: var(--muted); }
+    
+    .badge { display: inline-block; padding: 2px 7px; border-radius: 6px; font-size: 0.7rem; font-weight: 700; }
+    .badge-urgent { background: var(--danger); color: white; }
+    .badge-warning { background: var(--warning); color: black; }
+    .badge-ok { background: #334155; color: white; }
+
+    .bill-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 8px; }
+    .action-btn { background: #233149; color: white; border: none; padding: 6px 10px; border-radius: 6px; font-size: 0.75rem; cursor: pointer; font-weight: 600; }
+    .action-btn.pay { background: var(--success); }
+    .btn-delete { background: transparent; border: none; color: #64748b; font-size: 1.1rem; cursor: pointer; padding: 4px; }
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <div class="card">
+    <h1>Control de Pagos y Cuotas</h1>
+    <p class="subtitle">Recordatorios y seguimiento financiero</p>
+    
+    <button class="btn btn-notif" id="notifBtn" onclick="requestNotificationPermission()">🔔 Activar Alertas en el Teléfono</button>
+
+    <div class="stats-grid">
+      <div class="stat-box">
+        <div class="stat-val" id="totalDueMonth">$0.00</div>
+        <div class="stat-label">Cuotas del mes</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-val" id="urgentCount" style="color: var(--danger);">0</div>
+        <div class="stat-label">Vencimientos (≤ 3 días)</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Formulario -->
+  <div class="card">
+    <label>Tipo de Pago</label>
+    <select id="billCategory" onchange="toggleFormFields()">
+      <option value="basic">Servicio Básico (Luz, Agua, etc.)</option>
+      <option value="card">Tarjeta de Crédito / Tasa Cero</option>
+    </select>
+
+    <!-- Campos para Servicios Básicos -->
+    <div id="basicFields">
+      <label>Nombre del Servicio</label>
+      <input type="text" id="serviceName" placeholder="Ej: Recibo de Energía Eléctrica, Agua">
+
+      <label>Día de cobro recurrente (1 al 31)</label>
+      <input type="number" id="payDay" min="1" max="31" placeholder="Ej: 18">
+    </div>
+
+    <!-- Campos para Tarjeta Tasa Cero -->
+    <div id="cardFields" class="hidden">
+      <label>Producto o Compra realizada</label>
+      <input type="text" id="productName" placeholder="Ej: Celular, Laptop, Compra Hogar">
+
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+        <div>
+          <label>Monto Total ($)</label>
+          <input type="number" id="totalAmount" step="0.01" placeholder="0.00">
+        </div>
+        <div>
+          <label>Cuotas Pendientes</label>
+          <input type="number" id="installments" min="1" placeholder="Ej: 6">
+        </div>
+      </div>
+
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+        <div>
+          <label>Cuota mensual ($)</label>
+          <input type="number" id="monthlyPay" step="0.01" placeholder="0.00">
+        </div>
+        <div>
+          <label>Próximo vencimiento</label>
+          <input type="date" id="cardDueDate">
+        </div>
+      </div>
+    </div>
+
+    <button class="btn btn-primary" onclick="addEntry()">Guardar Recordatorio</button>
+  </div>
+
+  <!-- Listado -->
+  <div class="card">
+    <label style="margin-bottom: 8px;">Compromisos y Fechas</label>
+    <div id="entriesContainer">
+      <p style="text-align: center; font-size: 0.85rem; color: var(--muted); padding: 12px 0;">No tienes pagos registrados.</p>
+    </div>
+  </div>
+</div>
+
+<script>
+  let entries = JSON.parse(localStorage.getItem('budget_entries_data')) || [];
+
+  function toggleFormFields() {
+    const cat = document.getElementById('billCategory').value;
+    const isBasic = cat === 'basic';
+    document.getElementById('basicFields').classList.toggle('hidden', !isBasic);
+    document.getElementById('cardFields').classList.toggle('hidden', isBasic);
+  }
+
+  // Calcula la fecha más cercana para un día recurrente del mes
+  function getNextDateForDay(dayOfMonth) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    let year = today.getFullYear();
+    let month = today.getMonth();
+    let target = new Date(year, month, dayOfMonth);
+
+    if (target < today) {
+      target = new Date(year, month + 1, dayOfMonth);
+    }
+    return target;
+  }
+
+  function getDaysRemaining(targetDate) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const diff = targetDate - today;
+    return Math.ceil(diff / (1000 * 60 * 60 * 24));
+  }
+
+  function addEntry() {
+    const type = document.getElementById('billCategory').value;
+
+    if (type === 'basic') {
+      const name = document.getElementById('serviceName').value.trim();
+      const day = parseInt(document.getElementById('payDay').value);
+
+      if (!name || isNaN(day) || day < 1 || day > 31) {
+        alert("Ingresa el nombre del servicio y un día de mes válido (1 a 31).");
+        return;
+      }
+
+      entries.push({
+        id: Date.now(),
+        type: 'basic',
+        name: name,
+        dayOfMonth: day
+      });
+
+      document.getElementById('serviceName').value = '';
+      document.getElementById('payDay').value = '';
+    } else {
+      const product = document.getElementById('productName').value.trim();
+      const total = parseFloat(document.getElementById('totalAmount').value);
+      const installments = parseInt(document.getElementById('installments').value);
+      const monthly = parseFloat(document.getElementById('monthlyPay').value);
+      const dueDate = document.getElementById('cardDueDate').value;
+
+      if (!product || isNaN(total) || isNaN(installments) || isNaN(monthly) || !dueDate) {
+        alert("Por favor completa todos los campos de la cuota/tarjeta.");
+        return;
+      }
+
+      entries.push({
+        id: Date.now(),
+        type: 'card',
+        product: product,
+        totalAmount: total,
+        installments: installments,
+        monthlyPay: monthly,
+        dueDate: dueDate
+      });
+
+      document.getElementById('productName').value = '';
+      document.getElementById('totalAmount').value = '';
+      document.getElementById('installments').value = '';
+      document.getElementById('monthlyPay').value = '';
+      document.getElementById('cardDueDate').value = '';
+    }
+
+    saveAndRender();
+  }
+
+  function markInstallmentPaid(id) {
+    const item = entries.find(x => x.id === id);
+    if (!item) return;
+
+    item.installments -= 1;
+    if (item.installments <= 0) {
+      entries = entries.filter(x => x.id !== id);
+      alert(`¡Felicidades! Has terminado de pagar ${item.product}.`);
+    } else {
+      // Sumar 1 mes a la fecha de vencimiento
+      const [y, m, d] = item.dueDate.split('-').map(Number);
+      const nextDate = new Date(y, m, d); // mes ya en base 0 sumado
+      item.dueDate = nextDate.toISOString().split('T')[0];
+    }
+    saveAndRender();
+  }
+
+  function deleteEntry(id) {
+    entries = entries.filter(x => x.id !== id);
+    saveAndRender();
+  }
+
+  function saveAndRender() {
+    localStorage.setItem('budget_entries_data', JSON.stringify(entries));
+    render();
+    checkNotifications();
+  }
+
+  function render() {
+    const container = document.getElementById('entriesContainer');
+    const totalMonthElem = document.getElementById('totalDueMonth');
+    const urgentElem = document.getElementById('urgentCount');
+
+    let totalMonth = 0;
+    let urgentCount = 0;
+
+    if (entries.length === 0) {
+      container.innerHTML = `<p style="text-align: center; font-size: 0.85rem; color: var(--muted); padding: 12px 0;">No tienes pagos registrados.</p>`;
+      totalMonthElem.textContent = "$0.00";
+      urgentElem.textContent = "0";
+      return;
+    }
+
+    container.innerHTML = '';
+
+    entries.forEach(item => {
+      let targetDate;
+      let title = '';
+      let metaDetails = '';
+      let amountDisplay = '';
+      let actionControl = '';
+
+      if (item.type === 'basic') {
+        targetDate = getNextDateForDay(item.dayOfMonth);
+        title = item.name;
+        metaDetails = `Servicio Básico • Cobro recurrente día ${item.dayOfMonth}`;
+        amountDisplay = `<span style="font-size: 0.85rem; color: var(--muted);">Monto variable</span>`;
+        actionControl = `<button class="btn-delete" title="Eliminar" onclick="deleteEntry(${item.id})">✕</button>`;
+      } else {
+        const [y, m, d] = item.dueDate.split('-').map(Number);
+        targetDate = new Date(y, m - 1, d);
+        title = `${item.product} (Tasa Cero)`;
+        metaDetails = `${item.installments} cuotas rest. • Deuda tot: $${item.totalAmount.toFixed(2)}`;
+        amountDisplay = `<strong style="font-size: 1rem; color: #fff;">$${item.monthlyPay.toFixed(2)}/mes</strong>`;
+        totalMonth += item.monthlyPay;
+        actionControl = `
+          <div style="display: flex; gap: 6px; align-items: center;">
+            <button class="action-btn pay" onclick="markInstallmentPaid(${item.id})">Abonar cuota</button>
+            <button class="btn-delete" title="Eliminar" onclick="deleteEntry(${item.id})">✕</button>
+          </div>
+        `;
+      }
+
+      const days = getDaysRemaining(targetDate);
+      let badgeClass = 'badge-ok';
+      let rowClass = '';
+      let statusText = `En ${days} días`;
+
+      if (days < 0) {
+        badgeClass = 'badge-urgent';
+        rowClass = 'urgent';
+        statusText = `Vencido hace ${Math.abs(days)} d`;
+        urgentCount++;
+      } else if (days <= 3) {
+        badgeClass = 'badge-urgent';
+        rowClass = 'urgent';
+        statusText = days === 0 ? 'Vence HOY' : `Vence en ${days} d`;
+        urgentCount++;
+      } else if (days <= 5) {
+        badgeClass = 'badge-warning';
+        rowClass = 'warning';
+      }
+
+      const itemDiv = document.createElement('div');
+      itemDiv.className = `bill-item ${rowClass}`;
+      itemDiv.innerHTML = `
+        <div class="bill-header">
+          <div>
+            <div class="bill-title">${title}</div>
+            <div class="bill-meta">${metaDetails}</div>
+          </div>
+          <span class="badge ${badgeClass}">${statusText}</span>
+        </div>
+        <div class="bill-footer">
+          <div>${amountDisplay}</div>
+          ${actionControl}
+        </div>
+      `;
+      container.appendChild(itemDiv);
+    });
+
+    totalMonthElem.textContent = `$${totalMonth.toFixed(2)}`;
+    urgentElem.textContent = urgentCount;
+  }
+
+  function requestNotificationPermission() {
+    if (!("Notification" in window)) {
+      alert("Este navegador no soporta notificaciones de sistema.");
+      return;
+    }
+    Notification.requestPermission().then(permission => {
+      if (permission === "granted") {
+        document.getElementById('notifBtn').textContent = "✓ Alertas Activadas";
+        checkNotifications();
+      }
+    });
+  }
+
+  function checkNotifications() {
+    if (!("Notification" in window) || Notification.permission !== "granted") return;
+
+    entries.forEach(item => {
+      let targetDate;
+      let label = '';
+      if (item.type === 'basic') {
+        targetDate = getNextDateForDay(item.dayOfMonth);
+        label = item.name;
+      } else {
+        const [y, m, d] = item.dueDate.split('-').map(Number);
+        targetDate = new Date(y, m - 1, d);
+        label = `${item.product} ($${item.monthlyPay.toFixed(2)})`;
+      }
+
+      const days = getDaysRemaining(targetDate);
+      if (days >= 0 && days <= 3) {
+        new Notification("Recordatorio de Cobro", {
+          body: `¡Atención! Tu pago de ${label} vence en ${days === 0 ? 'el día de hoy' : days + ' días'}.`,
+          icon: "https://cdn-icons-png.flaticon.com/512/2830/2830284.png"
+        });
+      }
+    });
+  }
+
+  render();
+  if ("Notification" in window && Notification.permission === "granted") {
+    document.getElementById('notifBtn').textContent = "✓ Alertas Activadas";
+  }
+</script>
+</body>
+  </html>
+  
